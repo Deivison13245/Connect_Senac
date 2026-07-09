@@ -5,6 +5,7 @@ const cors = require('cors');
 // Adicione esta linha logo após o const cors = require('cors');
 const db = require('./backend/config/database');
 const usuarioRoutes = require('./backend/routes/usuarioRoutes');
+const agendamentoRoutes = require('./backend/routes/agendamentoRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,6 +20,7 @@ app.get('/api/status', (req, res) => {
 });
 
 app.use('/api/usuarios', usuarioRoutes);
+app.use('/api/agendamentos', agendamentoRoutes);
 
 // Iniciando o servidor
 app.listen(PORT, () => {
