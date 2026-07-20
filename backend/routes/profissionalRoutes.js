@@ -14,6 +14,8 @@ router.get(
     profissionalController.minhasTurmas
 );
 
+// Adicione esta linha no seu backend/routes/profissionalRoutes.js
+
 // Rota para o professor dar baixa na presença (concluir o serviço)
 router.put(
     '/agendamentos/:id/concluir',
@@ -21,5 +23,7 @@ router.put(
     autorizarPerfis('profissional'),
     profissionalController.concluirAgendamento
 );
+
+router.put('/agendamentos/:id/cancelar', authMiddleware, autorizarPerfis('profissional'), profissionalController.cancelarInscricao);
 
 module.exports = router;

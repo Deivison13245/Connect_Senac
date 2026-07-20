@@ -45,67 +45,147 @@ async function carregarMetricas(){
 // ============================================================================
 // 2. GESTÃO DE UTILIZADORES & HISTÓRICO (MODERAÇÃO)
 // ============================================================================
-async function carregarUtilizadores(){
-    const tbody = document.getElementById('tabelaUsuariosBody');
-    if (!tbody) return;
+// Variável global para guardar os dados da tabela em memória
+let baseUtilizadores = [];
 
+// ==========================================
+// MÓDULO DE GESTÃO DE UTILIZADORES
+// ==========================================
+async function carregarUtilizadores(){
     try {
         const response = await fetch(`${API_URL}/admin/usuarios`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-
-        if (!response.ok) throw new Error('Não foi possível carregar os utilizadores.');
-
-        const users = await response.json();
-        tbody.innerHTML = '';
-
-        users.forEach(user => {
-            const statusBadge = user.is_bloqueado
-                ? '<span class="badge bg-danger">Bloqueado</span>'
-                : '<span class="badge bg-success">Ativo</span>';
-
-            const podeExcluir = payloadToken.perfil === 'admin' || (payloadToken.perfil === 'coordenador' && user.perfil === 'candidato');
-            const btnExcluir = podeExcluir
-                ? `<button class="btn btn-sm btn-danger ms-1" onclick="excluirUsuario('${user.id}', '${user.nome}')">Excluir</button>`
-                : '';
-
-            const btnBloqueio = payloadToken.perfil === 'admin'
-                ? `<button class="btn btn-sm ${user.is_bloqueado ? 'btn-outline-success' : 'btn-outline-danger'}"
-                    onclick="toggleBloqueio('${user.id}', ${user.is_bloqueado})">
-                    ${user.is_bloqueado ? 'Liberar' : 'Bloquear'}
-                   </button>`
-                : '';
-
-            const row = `
-                <tr>
-                    <td>
-                        <div class="fw-bold">${user.nome}</div>
-                        <div class="text-muted small">Membro desde: ${new Date(user.created_at).toLocaleDateString('pt-BR')}</div>
-                    </td>
-                    <td>
-                        <div>${user.email}</div>
-                        <div class="text-muted small">${user.telefone}</div>
-                    </td>
-                    <td>
-                        <span class="badge bg-secondary">${user.perfil.toUpperCase()}</span>
-                        <div class="mt-1">${statusBadge}</div>
-                    </td>
-                    <td><span class="text-muted small">${user.cursos_ativos ?? 0}</span></td>
-                    <td class="text-center fw-bold text-primary">${user.total_agendados}</td>
-                    <td class="text-center fw-bold text-success">${user.total_concluidos}</td>
-                    <td class="text-center fw-bold text-danger">${user.total_cancelados}</td>
-                    <td class="text-end">
-                        <div class="d-flex justify-content-end">
-                            ${btnBloqueio}
-                            ${btnExcluir}
-                        </div>
-                    </td>
-                </tr>
-            `;
-            tbody.innerHTML += row;
-        });
+        baseUtilizadores = await response.json();
+        renderizarTabelaUtilizadores(baseUtilizadores); // Renderiza a lista completa
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-4">Erro ao carregar utilizadores.</td></tr>';
+        document.getElementById('tabelaUsuariosBody').innerHTML = '<tr><td colspan="8" class="text-danger text-center">Erro ao ligar ao servidor.</td></tr>';
+    }
+}
+
+function renderizarTabelaUtilizadores(lista){
+    const tbody = document.getElementById('tabelaUsuariosBody');
+    tbody.innerHTML = '';
+
+    if (lista.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">Nenhum utilizador encontrado com estes filtros.</td></tr>';
+        return;
+    }
+
+    lista.forEach(user => {
+        const statusBadge = user.is_bloqueado
+            ? '<span class="badge bg-danger">Bloqueado</span>'
+            : '<span class="badge bg-success">Ativo</span>';
+
+        // 1. Mensagem de WhatsApp Dinâmica
+        const telLimpo = user.telefone.replace(/\D/g, ''); // Remove formatações
+        const msgZap = encodeURIComponent(`Olá, ${user.nome}! Aqui é a Coordenação do Connect Senac.`);
+        const btnZap = `<a href="https://wa.me/55${telLimpo}?text=${msgZap}" target="_blank" class="btn btn-sm btn-outline-success ms-1" title="Enviar WhatsApp">💬</a>`;
+
+        // 2. Select Dinâmico de Perfis (Apenas Admin vê como <select>, os outros veem como texto)
+        let seletorPerfil = `<span class="badge bg-secondary">${user.perfil.toUpperCase()}</span>`;
+        if (payloadToken.perfil === 'admin') {
+            seletorPerfil = `
+                <select class="form-select form-select-sm" style="width: 120px;" onchange="alterarPerfil('${user.id}', this.value)">
+                    <option value="candidato" ${user.perfil === 'candidato' ? 'selected' : ''}>Candidato</option>
+                    <option value="profissional" ${user.perfil === 'profissional' ? 'selected' : ''}>Professor</option>
+                    <option value="coordenador" ${user.perfil === 'coordenador' ? 'selected' : ''}>Coord.</option>
+                    <option value="admin" ${user.perfil === 'admin' ? 'selected' : ''}>Admin</option>
+                </select>
+            `;
+        }
+
+        const btnBloqueio = payloadToken.perfil === 'admin'
+            ? `<button class="btn btn-sm ${user.is_bloqueado ? 'btn-outline-success' : 'btn-outline-danger'} ms-1" onclick="toggleBloqueio('${user.id}', ${user.is_bloqueado})">🔒</button>` : '';
+
+        const podeExcluir = payloadToken.perfil === 'admin' || (payloadToken.perfil === 'coordenador' && user.perfil === 'candidato');
+        const btnExcluir = podeExcluir
+            ? `<button class="btn btn-sm btn-danger ms-1" onclick="excluirUsuario('${user.id}', '${user.nome}')">🗑️</button>` : '';
+
+        const row = `
+            <tr>
+                <td><div class="fw-bold">${user.nome}</div></td>
+                <td>
+                    <div class="small">${user.email}</div>
+                    <div class="text-muted small">${user.telefone}</div>
+                </td>
+                <td>${seletorPerfil}</td>
+                <td><span class="text-muted small">${user.cursos_ativos || '-'}</span></td>
+                <td class="text-center fw-bold text-primary">${user.total_agendados}</td>
+                <td class="text-center fw-bold text-success">${user.total_concluidos}</td>
+                <td class="text-center fw-bold text-danger">${user.total_cancelados}</td>
+                <td class="text-end text-nowrap">
+                    ${btnZap}
+                    ${btnBloqueio}
+                    ${btnExcluir}
+                </td>
+            </tr>
+        `;
+        tbody.innerHTML += row;
+    });
+}
+
+// -----------------------------------------
+// LÓGICA DOS FILTROS (Pesquisa em Memória)
+// -----------------------------------------
+function aplicarFiltrosUsuarios(){
+    const termo = document.getElementById('filtroTextoUser').value.toLowerCase();
+    const perfil = document.getElementById('filtroPerfilUser').value;
+
+    const listaFiltrada = baseUtilizadores.filter(user => {
+        // Verifica se o texto digitado bate com o nome OU com o e-mail
+        const matchTexto = user.nome.toLowerCase().includes(termo) || user.email.toLowerCase().includes(termo);
+        // Verifica se o perfil escolhido bate (se estiver vazio, aceita todos)
+        const matchPerfil = perfil === "" || user.perfil === perfil;
+
+        return matchTexto && matchPerfil;
+    });
+
+    renderizarTabelaUtilizadores(listaFiltrada);
+}
+
+// Ouve as digitações e cliques para filtrar em tempo real!
+const inputBusca = document.getElementById('filtroTextoUser');
+const selectPerfil = document.getElementById('filtroPerfilUser');
+const btnLimpar = document.getElementById('btnLimparFiltros');
+
+if(inputBusca) inputBusca.addEventListener('input', aplicarFiltrosUsuarios);
+if(selectPerfil) selectPerfil.addEventListener('change', aplicarFiltrosUsuarios);
+if(btnLimpar) {
+    btnLimpar.addEventListener('click', () => {
+        inputBusca.value = '';
+        selectPerfil.value = '';
+        renderizarTabelaUtilizadores(baseUtilizadores);
+    });
+}
+
+// -----------------------------------------
+// FUNÇÃO DE ALTERAÇÃO DE PERFIL VIA API
+// -----------------------------------------
+async function alterarPerfil(idUsuario, novoPerfil){
+    if (!confirm(`Deseja alterar o perfil deste utilizador para ${novoPerfil.toUpperCase()}?`)) {
+        carregarUtilizadores(); // Se cancelar, volta o select ao normal
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/admin/usuarios/${idUsuario}/perfil`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ perfil: novoPerfil })
+        });
+
+        if (response.ok) {
+            alert('Perfil atualizado com sucesso!');
+            carregarUtilizadores(); // Atualiza a base de dados
+        } else {
+            const data = await response.json();
+            alert(data.erro);
+            carregarUtilizadores(); // Reverte
+        }
+    } catch (error) {
+        alert("Erro ao alterar o perfil.");
+        carregarUtilizadores(); // Reverte
     }
 }
 
@@ -189,12 +269,12 @@ formCurso.addEventListener('submit', async (e) => {
     msgDiv.innerHTML = '<span class="text-primary">A guardar curso...</span>';
 
     const payload = {
-    nome: document.getElementById('nomeCurso').value,
-    descricao: document.getElementById('descricaoCurso').value,
-    motivo_modelo: document.getElementById('motivoCurso').value,
-    restricoes: document.getElementById('restricoesCurso').value,
-    profissional_id: document.getElementById('selectProfissional').value // VÍNCULO ADICIONADO!
-};
+        nome: document.getElementById('nomeCurso').value,
+        descricao: document.getElementById('descricaoCurso').value,
+        motivo_modelo: document.getElementById('motivoCurso').value,
+        restricoes: document.getElementById('restricoesCurso').value,
+        profissional_id: document.getElementById('selectProfissional').value // VÍNCULO ADICIONADO!
+    };
 
     try {
         const response = await fetch(`${API_URL}/cursos`, {
@@ -275,6 +355,7 @@ formVagas.addEventListener('submit', async (e) => {
         msgDiv.innerHTML = '<span class="text-danger">Erro de ligação.</span>';
     }
 });
+
 async function carregarProfissionaisNoSelect(){
     const select = document.getElementById('selectProfissional');
     try {
@@ -315,8 +396,258 @@ async function excluirUsuario(id, nome){
     }
 }
 
+// Instância do Modal de Edição (Adicione no topo junto às outras variáveis)
+let modalEditarCursoInstance = null;
+
+// Esperar o DOM carregar para instanciar o Modal
+document.addEventListener("DOMContentLoaded", () => {
+    const modalEl = document.getElementById('modalEditarCurso');
+    if (modalEl) modalEditarCursoInstance = new bootstrap.Modal(modalEl);
+
+    // Iniciar carregamentos
+    carregarCursosAdmin();
+});
+
+// ==========================================
+// 1. ATUALIZAR A CRIAÇÃO DE CURSOS
+// ==========================================
+// Procure o seu 'formCurso.addEventListener' e atualize o payload para incluir os novos campos:
+/*
+    const payload = {
+        // ... (mantenha os campos existentes)
+        foto_url: document.getElementById('fotoCurso').value,
+        localizacao: document.getElementById('localCurso').value,
+        profissional_id: document.getElementById('selectProfissional').value
+    };
+*/
+
+// ==========================================
+// 2. LISTAR CURSOS NA TABELA DE GESTÃO
+// ==========================================
+async function carregarCursosAdmin(){
+    const tbody = document.getElementById('tabelaCursosBody');
+    if (!tbody) return;
+
+    try {
+        const response = await fetch(`${API_URL}/cursos/admin`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const cursos = await response.json();
+
+        tbody.innerHTML = '';
+        if (cursos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Nenhum curso cadastrado.</td></tr>';
+            return;
+        }
+
+        cursos.forEach(curso => {
+            const profNome = curso.usuarios ? curso.usuarios.nome : 'Sem Professor';
+            const statusBadge = curso.status === 'ativo'
+                ? '<span class="badge bg-success">Ativo</span>'
+                : '<span class="badge bg-secondary">Arquivado</span>';
+
+            // O arquivamento é um Soft Delete. Só mostramos o botão se estiver ativo.
+            const btnArquivar = curso.status === 'ativo'
+                ? `<button class="btn btn-sm btn-outline-danger ms-1" onclick="arquivarCurso('${curso.id}', '${curso.nome}')">Arquivar</button>`
+                : '';
+
+            const row = `
+                <tr>
+                    <td>
+                        <div class="fw-bold text-dark">${curso.nome}</div>
+                        <div class="small text-muted text-truncate" style="max-width: 200px;">${curso.descricao}</div>
+                    </td>
+                    <td>${profNome}</td>
+                    <td class="small">${curso.localizacao || '-'}</td>
+                    <td>${statusBadge}</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary" onclick='abrirModalEdicao(${JSON.stringify(curso).replace(/'/g, "&#39;")})'>Editar</button>
+                        ${btnArquivar}
+                    </td>
+                </tr>
+            `;
+            tbody.innerHTML += row;
+        });
+    } catch (error) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-danger text-center">Erro ao carregar catálogo.</td></tr>';
+    }
+}
+
+// ==========================================
+// 3. EDITAR E ARQUIVAR CURSOS
+// ==========================================
+async function arquivarCurso(id, nome){
+    if(!confirm(`Deseja arquivar o curso "${nome}"? Ele sairá da vitrine dos alunos, mas o histórico será mantido.`)) return;
+
+    try {
+        const response = await fetch(`${API_URL}/cursos/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (response.ok) {
+            carregarCursosAdmin(); // Atualiza a tabela
+            carregarCursosNoSelect(); // Atualiza os selects de formulários
+        } else {
+            alert('Erro ao arquivar curso.');
+        }
+    } catch (error) {
+        alert('Erro de conexão.');
+    }
+}
+
+function abrirModalEdicao(curso){
+    document.getElementById('editCursoId').value = curso.id;
+    document.getElementById('editNome').value = curso.nome;
+    document.getElementById('editDescricao').value = curso.descricao;
+    document.getElementById('editLocal').value = curso.localizacao;
+    document.getElementById('editFoto').value = curso.foto_url || '';
+
+    // Copiar opções do select de profissionais principal para o select do modal
+    const selectPrincipal = document.getElementById('selectProfissional');
+    const selectEdit = document.getElementById('editProfissional');
+    selectEdit.innerHTML = selectPrincipal.innerHTML;
+    selectEdit.value = curso.profissional_id;
+
+    document.getElementById('msgEditCurso').innerHTML = '';
+    modalEditarCursoInstance.show();
+}
+
+const formEditarCurso = document.getElementById('formEditarCurso');
+if (formEditarCurso) {
+    formEditarCurso.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('editCursoId').value;
+        const msgDiv = document.getElementById('msgEditCurso');
+        msgDiv.innerHTML = '<span class="text-primary">A atualizar...</span>';
+
+        const payload = {
+            nome: document.getElementById('editNome').value,
+            descricao: document.getElementById('editDescricao').value,
+            localizacao: document.getElementById('editLocal').value,
+            foto_url: document.getElementById('editFoto').value,
+            profissional_id: document.getElementById('editProfissional').value
+        };
+
+        try {
+            const response = await fetch(`${API_URL}/cursos/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (response.ok) {
+                msgDiv.innerHTML = '<span class="text-success">Atualizado com sucesso!</span>';
+                carregarCursosAdmin();
+                carregarCursosNoSelect();
+                setTimeout(() => modalEditarCursoInstance.hide(), 1500);
+            } else {
+                msgDiv.innerHTML = '<span class="text-danger">Erro ao atualizar.</span>';
+            }
+        } catch (error) {
+            msgDiv.innerHTML = '<span class="text-danger">Erro de conexão.</span>';
+        }
+    });
+}
+
+// ==========================================
+// MÓDULO DE PAUTAS GLOBAIS (VISÃO COORDENAÇÃO)
+// ==========================================
+async function carregarPautasGlobais(){
+    const accordion = document.getElementById('accordionPautasGlobais');
+    // Se o elemento não existir na tela (por segurança), interrompe a função
+    if (!accordion) return;
+
+    try {
+        const response = await fetch(`${API_URL}/admin/pautas`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const cursos = await response.json();
+
+        accordion.innerHTML = '';
+
+        if (cursos.length === 0) {
+            accordion.innerHTML = '<div class="alert alert-info border-0 shadow-sm mt-3">Nenhuma pauta ativa no momento.</div>';
+            return;
+        }
+
+        cursos.forEach((curso, index) => {
+            let horariosHTML = '';
+
+            // Pega o nome do professor ou avisa se não tiver
+            const nomeProfessor = curso.usuarios ? curso.usuarios.nome : 'Sem Professor Vinculado';
+
+            if (curso.disponibilidades && curso.disponibilidades.length > 0) {
+                // Ordenar por data
+                curso.disponibilidades.sort((a, b) => new Date(a.data_hora) - new Date(b.data_hora));
+
+                curso.disponibilidades.forEach(disp => {
+                    const dataFormatada = new Date(disp.data_hora).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+                    const agendamentosAtivos = disp.agendamentos ? disp.agendamentos.filter(a => a.status !== 'cancelado') : [];
+
+                    let tabelaModelos = '';
+                    if (agendamentosAtivos.length === 0) {
+                        tabelaModelos = `<p class="text-muted small mb-0 mt-2">Nenhum modelo agendado.</p>`;
+                    } else {
+                        let linhas = agendamentosAtivos.map(ag => `
+                            <tr>
+                                <td>${ag.usuarios.nome}</td>
+                                <td><a href="https://wa.me/55${ag.usuarios.telefone.replace(/\D/g, '')}" target="_blank" class="text-decoration-none text-success">📱 ${ag.usuarios.telefone}</a></td>
+                                <td><span class="badge ${ag.status === 'concluido' ? 'bg-success' : 'bg-primary'}">${ag.status.toUpperCase()}</span></td>
+                            </tr>
+                        `).join('');
+
+                        tabelaModelos = `
+                            <table class="table table-sm mt-3 border">
+                                <thead class="table-light"><tr><th>Modelo</th><th>Contato</th><th>Status</th></tr></thead>
+                                <tbody>${linhas}</tbody>
+                            </table>`;
+                    }
+
+                    horariosHTML += `
+                        <div class="mb-4 p-3 bg-white border rounded shadow-sm">
+                            <div class="fw-bold text-dark border-bottom pb-2">📅 Data: ${dataFormatada} <span class="badge bg-secondary float-end">Ocupação: ${disp.vagas_ocupadas} / ${disp.vagas_totais}</span></div>
+                            ${tabelaModelos}
+                        </div>
+                    `;
+                });
+            }
+
+            const itemOpen = index === 0 ? 'show' : '';
+            const btnCollapsed = index === 0 ? '' : 'collapsed';
+
+            // Monta o cabeçalho da "Sanfona" com o nome do curso e o professor
+            accordion.innerHTML += `
+                <div class="accordion-item border-0 border-bottom">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button ${btnCollapsed}" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePauta${curso.id}">
+                            <strong class="me-2 text-primary">📘 ${curso.nome}</strong>
+                            <span class="badge bg-info text-dark">Prof: ${nomeProfessor}</span>
+                        </button>
+                    </h2>
+                    <div id="collapsePauta${curso.id}" class="accordion-collapse collapse ${itemOpen}" data-bs-parent="#accordionPautasGlobais">
+                        <div class="accordion-body bg-light">
+                            ${horariosHTML || '<p class="text-muted mt-2">Sem horários abertos para este curso.</p>'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    } catch (error) {
+        console.error("Erro ao carregar as pautas globais:", error);
+        accordion.innerHTML = '<div class="text-danger p-4 text-center">Erro ao carregar os dados. Verifique a conexão com o servidor.</div>';
+    }
+}
+
+
+
+// Chame essa função na inicialização do arquivo (no final do admin.js)
+carregarProfissionaisNoSelect();
 // Inicialização de ecrã
 carregarMetricas();
 carregarCursosNoSelect();
 carregarUtilizadores();
-carregarProfissionaisNoSelect()
+carregarPautasGlobais();

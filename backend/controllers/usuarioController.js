@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto'); // Biblioteca nativa do Node.js para criptografia
 
+
 // 1. LÓGICA DE REGISTO (CADASTRO)
 exports.registrar = async (req, res) => {
     const { nome, email, telefone, senha, confirmar_senha, consentimento_termos, consentimento_imagem } = req.body;
